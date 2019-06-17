@@ -12,8 +12,6 @@ from blazingdb.protocol.interpreter import InterpreterMessage
 from blazingdb.protocol.orchestrator import OrchestratorMessageType
 from blazingdb.protocol.gdf import gdf_columnSchema
 
-from librmm_cffi import librmm as rmm
-
 import pyarrow as pa
 from cudf.bindings.cudf_cpp import *
 
@@ -219,11 +217,13 @@ class PyConnector:
             if b'SqlSyntaxException' in errorResponse.errors:
                 raise SyntaxError(errorResponse.errors.decode('utf-8'))
             elif b'SqlValidationException' in errorResponse.errors:
-                raise ValueError(errorResponse.errors.decode('utf-8'))
+               raise ValueError(errorResponse.errors.decode('utf-8'))
             raise Error(errorResponse.errors.decode('utf-8'))
-        dmlResponseDTO = blazingdb.protocol.orchestrator.DMLResponseSchema.From(
-            response.payload)
-        return dmlResponseDTO.resultToken, dmlResponseDTO.nodeConnection.path.decode('utf8'), dmlResponseDTO.nodeConnection.port, dmlResponseDTO.calciteTime
+
+        distributed_response = blazingdb.protocol.orchestrator.DMLDistributedResponseSchema.From(response.payload)
+
+        return list(item for item in distributed_response.responses)
+
 
     def run_ddl_drop_table(self, tableName, dbName):
         # TODO find a way to print only for debug mode (add verbose arg)
@@ -567,8 +567,6 @@ def _get_client():
     return __blazing__global_client
 
 
-from librmm_cffi import librmm as rmm
-
 def _open_ipc_array(handle, shape, dtype, strides=None, offset=0):
     dtype = np.dtype(dtype)
     # compute size
@@ -662,6 +660,9 @@ def _run_query_get_token(sql):
         tableGroup = _create_dummy_table_group()
 
         resultToken, interpreter_path, interpreter_port, calciteTime = client.run_dml_query_token(sql, tableGroup)
+
+        metaToken = {"client" : client, "resultToken" : resultToken, "interpreter_path" : interpreter_path, "interpreter_port" : interpreter_port, "startTime" : startTime, "calciteTime" : calciteTime}
+        return metaToken
     except (SyntaxError, RuntimeError, ValueError, ConnectionRefusedError, AttributeError) as error:
         error_message = error
     except Error as error:
@@ -674,6 +675,39 @@ def _run_query_get_token(sql):
 
     metaToken = {"client" : client, "resultToken" : resultToken, "interpreter_path" : interpreter_path, "interpreter_port" : interpreter_port, "startTime" : startTime, "calciteTime" : calciteTime}
     return metaToken
+ 
+
+def _run_query_filesystem_get_token(sql, sql_data):
+    startTime = time.time()
+
+    resultToken = 0
+    interpreter_path = None
+    interpreter_port = None
+    calciteTime = 0
+    error_message = ''
+
+    try:
+        client = _get_client()
+
+        for schema, files in sql_data.items():
+            _reset_table(client, schema.table_name, schema.gdf)
+
+        tableGroup = _sql_data_to_table_group(sql_data)
+
+        resultToken, interpreter_path, interpreter_port, calciteTime = client.run_dml_query_filesystem_token(sql, tableGroup)
+    except (SyntaxError, RuntimeError, ValueError, ConnectionRefusedError, AttributeError) as error:
+        error_message = error
+    except Error as error:
+        error_message = str(error)
+    except Exception:
+        error_message = "Unexpected error on " + _run_query_filesystem_get_token.__name__ + ", " + str(error)
+
+    if error_message is not '':
+        print(error_message)
+
+    metaToken = {"client" : client, "resultToken" : resultToken, "interpreter_path" : interpreter_path, "interpreter_port" : interpreter_port, "startTime" : startTime, "calciteTime" : calciteTime}
+    return metaToken
+
 
 def _run_query_get_results(metaToken):
     error_message = ''
@@ -695,6 +729,54 @@ def _run_query_get_results(metaToken):
         print(error_message)
     return_result = ResultSetHandle(None, None, metaToken["resultToken"], metaToken["interpreter_path"], metaToken["interpreter_port"], None, metaToken["client"], metaToken["calciteTime"], 0, 0, error_message)
     return return_result
+
+def _private_run_query(sql, tables):
+    metaToken = _run_query_get_token(sql, tables)
+    return _run_query_get_results(metaToken)
+
+
+    try:
+        metaToken = _run_query_get_token(sql, tables)
+        return _run_query_get_results(metaToken)
+    except SyntaxError as error:
+        raise error
+    except Error as err:
+        print(err)
+
+    return None
+
+    # startTime = time.time()
+    # client = _get_client()
+    # try:
+    #     for table, gdf in tables.items():
+    #         _reset_table(client, table, gdf)
+    # except Error as err:
+    #     print(err)
+
+    # resultSet = None
+    # token = 0
+    # interpreter_path = None
+    # interpreter_port = None
+    # try:
+    #     tableGroup = _to_table_group(tables)
+    #     token, interpreter_path, interpreter_port, calciteTime = client.run_dml_query_token(sql, tableGroup)
+    #     resultSet, ipchandles = _private_get_result(token, interpreter_path, interpreter_port, calciteTime)
+    #     totalTime = (time.time() - startTime) * 1000  # in milliseconds
+
+    #     return ResultSetHandle(resultSet.columns, token, interpreter_path, interpreter_port, ipchandles, client, calciteTime, resultSet.metadata.time, totalTime)
+
+    # except SyntaxError as error:
+    #     raise error
+    # except Error as err:
+    #     print(err)
+
+    # return None
+
+
+def _private_run_query_filesystem(sql, sql_data):
+    metaToken = _run_query_filesystem_get_token(sql, sql_data)
+    return _run_query_get_results(metaToken)
+
 
 
 from collections import namedtuple
@@ -787,3 +869,50 @@ def _create_dummy_table_group():
     database_name = 'main'
     tableGroup = OrderedDict([('name', database_name), ('tables', [])])
     return tableGroup
+
+
+def run_query_filesystem(sql, sql_data):
+    startTime = time.time()
+
+    client = _get_client()
+
+    for schema, files in sql_data.items():
+        _reset_table(client, schema.table_name, schema.gdf)
+
+    totalTime = 0
+    result_list = []
+    try:
+        tableGroup = _sql_data_to_table_group(sql_data)
+        dist_list = client.run_dml_query_filesystem_token(sql, tableGroup)
+
+        for result in dist_list:
+            resultSet, ipchandles = _private_get_result(result.resultToken,
+                                                        result.nodeConnection.path.decode('utf8'),
+                                                        result.nodeConnection.port,
+                                                        result.calciteTime)
+            result_list.append({'result': result, 'resultSet': resultSet, 'ipchandles': ipchandles})
+
+        totalTime = (time.time() - startTime) * 1000  # in milliseconds
+    except SyntaxError as error:
+        raise error
+    except Error as err:
+        print(err)
+        raise err
+
+    result_set_list = []
+ 
+    for result in result_list:
+        result_set_list.append(ResultSetHandle(result['resultSet'].columns,
+                                               result['resultSet'].columnTokens,
+                                               result['result'].resultToken,
+                                               result['result'].nodeConnection.path.decode('utf8'),
+                                               result['result'].nodeConnection.port,
+                                               result['ipchandles'],
+                                               client,
+                                               result['result'].calciteTime,
+                                               result['resultSet'].metadata.time,
+                                               totalTime,
+                                               ''
+                                               ))
+
+    return result_set_list
