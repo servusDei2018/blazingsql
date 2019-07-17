@@ -11,12 +11,14 @@ from .bridge import internal_api
 
 from .filesystem import FileSystem
 from .sql import SQL
+from .sql import ResultSet
 from .datasource import from_cudf
 from .datasource import from_pandas
 from .datasource import from_arrow
 from .datasource import from_csv
 from .datasource import from_parquet
 from .datasource import from_result_set
+from .datasource import from_distributed_result_set
 import time
 
 
@@ -30,9 +32,9 @@ class BlazingContext(object):
 
         # NOTE ("//"+) is a neat trick to handle ip:port cases
         parse_result = urlparse("//" + connection)
-        __orchestrator_ip = parse_result.hostname
-        __orchestrator_port = parse_result.port
-        internal_api.SetupOrchestratorConnection(orchestrator_host_ip = __orchestrator_ip, orchestrator_port = __orchestrator_port)
+        orchestrator_host_ip = parse_result.hostname
+        orchestrator_port = parse_result.port
+        internal_api.SetupOrchestratorConnection(orchestrator_host_ip, orchestrator_port)
 
         # TODO percy handle errors (see above)
         self.connection = connection
@@ -83,6 +85,8 @@ class BlazingContext(object):
             datasource = from_arrow(input, table_name)
         elif type(input) == internal_api.ResultSetHandle:
             datasource = from_result_set(input, table_name)
+        elif hasattr(input, 'metaToken'):
+            datasource = from_distributed_result_set(input.metaToken,table_name)
         elif type(input) == str or type(input) == list:
 
             if type(input) == str:
@@ -119,6 +123,8 @@ class BlazingContext(object):
 
             # TODO percy dir
 
+        self.sqlObject.create_table(table_name, datasource)
+        
         # TODO percy raise exption here or manage the error
 
         return None
