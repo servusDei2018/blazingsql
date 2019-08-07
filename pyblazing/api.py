@@ -684,7 +684,8 @@ def _run_query_get_results(distMetaToken, startTime):
             resultSet, ipchandles = _private_get_result(result.resultToken,
                                                         result.nodeConnection.path.decode('utf8'),
                                                         result.nodeConnection.port,
-                                                        result.calciteTime)
+                                                        result.calciteTime,
+                                                        client)
             result_list.append({'result': result, 'resultSet': resultSet, 'ipchandles': ipchandles})
 
         totalTime = (time.time() - startTime) * 1000  # in milliseconds
@@ -721,73 +722,9 @@ def _run_query_get_results(distMetaToken, startTime):
     return result_set_list
 
 
-def _get_result_dask(resultToken, interpreter_path, interpreter_port, calciteTime,client):
-
-    resultSet = client._get_result(resultToken, interpreter_path, interpreter_port)
-
-    gdf_columns = []
-    ipchandles = []
-    for i, c in enumerate(resultSet.columns):
-
-        # todo: remove this if when C gdf struct is replaced by pyarrow object
-        # this workaround is only for the python object. The RAL knows the column_token and will know what its dtype actually is
-        if c.dtype == gdf_dtype.GDF_DATE32:
-            c.dtype = gdf_dtype.GDF_INT32
-
-        if c.dtype == gdf_dtype.GDF_DATE64:
-            np_dtype = np.dtype('datetime64[ms]')
-        else:
-            np_dtype = gdf_to_np_dtype(c.dtype)
-
-        if c.size != 0 :
-            if c.dtype == gdf_dtype.GDF_STRING:
-                new_strs = nvstrings.create_from_ipc(c.custrings_data)
-                newcol = StringColumn(new_strs)
-
-                gdf_columns.append(newcol.view(StringColumn, dtype='object'))
-            else:
-                if c.dtype == gdf_dtype.GDF_STRING_CATEGORY:
-                    print("ERROR _private_get_result received a GDF_STRING_CATEGORY")
-
-                assert len(c.data) == 64,"Data ipc handle was not 64 bytes"
-
-                ipch_data, data_ptr = _open_ipc_array(
-                        c.data, shape=c.size, dtype=np_dtype)
-                ipchandles.append(ipch_data)
-
-                valid_ptr = None
-                if (c.null_count > 0):
-                    assert len(c.valid) == 64,"Valid ipc handle was not 64 bytes"
-                    ipch_valid, valid_ptr = _open_ipc_array(
-                        c.valid, shape=calc_chunk_size(c.size, mask_bitsize), dtype=np.int8)
-                    ipchandles.append(ipch_valid)
-
-                if (valid_ptr is None):
-                    gdf_columns.append(build_column(Buffer(data_ptr), np_dtype))
-                else:
-                    gdf_columns.append(build_column(Buffer(data_ptr), np_dtype, Buffer(valid_ptr)))
-
-        else:
-            if c.dtype == gdf_dtype.GDF_STRING:
-                gdf_columns.append(StringColumn(nvstrings.to_device([])))
-            else:
-                if c.dtype == gdf_dtype.GDF_DATE32:
-                    c.dtype = gdf_dtype.GDF_INT32
-
-                gdf_columns.append(build_column(Buffer.null(np_dtype), np_dtype))
-
-    gdf = DataFrame()
-    for k, v in zip(resultSet.columnNames, gdf_columns):
-        assert k != "", "Column name was an empty string"
-        gdf[k.decode("utf-8")] = v
-
-
-    resultSet.columns = gdf
-    return resultSet, ipchandles
-
 def convert_result_msg(metaToken,connection):
 
-    resultSet, ipchandles = _get_result_dask(metaToken[0].resultToken,"127.0.0.1",8891,0,connection)
+    resultSet, ipchandles = _private_get_result(metaToken[0].resultToken,"127.0.0.1",8891,0,connection)
 
     totalTime = 0  # in milliseconds
 
@@ -827,7 +764,8 @@ def _run_query_get_concat_results(distMetaToken, startTime):
             resultSet, ipchandles = _private_get_result(result.resultToken,
                                                         result.nodeConnection.path.decode('utf8'),
                                                         result.nodeConnection.port,
-                                                        result.calciteTime)
+                                                        result.calciteTime,
+                                                        client)
             result_list.append(resultSet)
 
         need_to_concat = sum([len(result.columns) > 0 for result in result_list]) > 1
@@ -969,7 +907,8 @@ def run_query_filesystem(sql, sql_data):
             resultSet, ipchandles = _private_get_result(result.resultToken,
                                                         result.nodeConnection.path.decode('utf8'),
                                                         result.nodeConnection.port,
-                                                        result.calciteTime)
+                                                        result.calciteTime,
+                                                        client)
             result_list.append({'result': result, 'resultSet': resultSet, 'ipchandles': ipchandles})
 
         totalTime = (time.time() - startTime) * 1000  # in milliseconds
