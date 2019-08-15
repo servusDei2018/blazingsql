@@ -15,7 +15,7 @@ bc.create_table('taxi', '/blazingdb/data/taxi.csv', delimiter= ',', names = colu
 result = bc.sql('SELECT count(*) FROM main.taxi GROUP BY year(key)').get()
 result_gdf = result.columns
 
-#Print GDF 
+#Print GDF
 print(result_gdf)
 ```
 
@@ -26,9 +26,25 @@ For additional information, browse our complete [documentation](https://docs.bla
 
 Too see all the ways you can get started with BlazingSQL checkout out our [Getting Started Page](https://blazingsql.com/#/getstarted)
 
+## Build Conda Package
+Navigate to the folder
+cd conda/recipes/pyblazing
+conda build  -c blazingsql -c conda-forge -c rapidsai-nightly blazingsql-dev .
 
-## Build/Install from Source
-See build [instructions](CONTRIBUTING.md#setting-up-your-build-environment).
+## Build/Install from Source (Conda Environment)
+This is the recommended way of building pyblazing and other dependencies from source. It ensures that all the dependencies are available to the build process.
+conda install -c blazingsql -c conda-forge -c rapidsai-nightly blazingsql-dev
+
+$CONDA_PREFIX now has a folder for every blazingsql repository. Inside each repo you can run in conda/recipes/{repo name}/build.sh from the root folder of the repository.
+
+## Build/Install from Source (github)
+
+git clone https://github.com/blazingdb/pyblazing
+cd pyblazing
+pip install .
+
+
+
 
 ## Contributing
 
@@ -47,4 +63,3 @@ The RAPIDS suite of open source software libraries aim to enable execution of en
 ### Apache Arrow on GPU
 
 The GPU version of [Apache Arrow](https://arrow.apache.org/) is a common API that enables efficient interchange of tabular data between processes running on the GPU. End-to-end computation on the GPU avoids unnecessary copying and converting of data off the GPU, reducing compute time and cost for high-performance analytics common in artificial intelligence workloads. As the name implies, cuDF uses the Apache Arrow columnar data format on the GPU. Currently, a subset of the features in Apache Arrow are supported.
-
