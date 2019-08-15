@@ -115,7 +115,7 @@ class DataSource:
             return self.parquet
         elif self.type == Type.cudf:
             return self.cudf_df
-        elif self.type == Type.dask_cudf
+        elif self.type == Type.dask_cudf:
             return self.dask_cudf
 
         return None
