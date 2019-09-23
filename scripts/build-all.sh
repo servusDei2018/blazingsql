@@ -32,11 +32,11 @@ do
       cd ..
     fi
   fi
-  if [ "$clean_build" -eq "true" ]; then
+  if [ "$clean_build" == "true" ]; then
     cd $repo && git reset --hard && git checkout $branch && git pull origin $branch
   fi
   i=$(($i+1))
-
+  cd $repo
   chmod +x conda/recipes/$repo/build.sh
   status="Cloned and built"
   conda/recipes/$repo/build.sh
