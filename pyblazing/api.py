@@ -948,11 +948,13 @@ def _private_get_result(resultToken, interpreter_path, interpreter_port, calcite
                 if c.dtype == gdf_dtype.GDF_STRING_CATEGORY:
                     print("ERROR _private_get_result received a GDF_STRING_CATEGORY")
 
-                assert len(c.data) == 64,"Data ipc handle was not 64 bytes"
+                data_ptr = None
+                if c.dtype != gdf_dtype.GDF_invalid:
+                    assert len(c.data) == 64,"Data ipc handle was not 64 bytes"
 
-                ipch_data, data_ptr = _open_ipc_array(
-                        c.data, shape=c.size, dtype=np_dtype)
-                ipchandles.append(ipch_data)
+                    ipch_data, data_ptr = _open_ipc_array(
+                            c.data, shape=c.size, dtype=np_dtype)
+                    ipchandles.append(ipch_data)
 
                 valid_ptr = None
                 if (c.null_count > 0):
@@ -961,7 +963,11 @@ def _private_get_result(resultToken, interpreter_path, interpreter_port, calcite
                         c.valid, shape=calc_chunk_size(c.size, mask_bitsize), dtype=np.int8)
                     ipchandles.append(ipch_valid)
 
-                if (valid_ptr is None):
+                if (c.dtype == gdf_dtype.GDF_invalid and valid_ptr != None):
+                    #gdf_columns.append(build_column(Buffer(cuda.device_array(c.size,  dtype=np_dtype)), np_dtype, Buffer(valid_ptr)))
+                    #gdf_columns.append(build_column(Buffer(np.arange(c.size)), np_dtype, Buffer(valid_ptr)))
+                    gdf_columns.append(build_column(Buffer(np.full(c.size, 0, dtype=np_dtype)), np_dtype, Buffer(valid_ptr)))
+                elif (valid_ptr is None):
                     gdf_columns.append(build_column(Buffer(data_ptr), np_dtype))
                 else:
                     gdf_columns.append(build_column(Buffer(data_ptr), np_dtype, Buffer(valid_ptr)))
@@ -1466,7 +1472,8 @@ def gdf_to_np_dtype(dtype):
         gdf_dtype.GDF_CATEGORY: np.int32,
         gdf_dtype.GDF_STRING_CATEGORY: np.object_,
         gdf_dtype.GDF_STRING: np.object_,
-        gdf_dtype.N_GDF_TYPES: np.int32
+        gdf_dtype.N_GDF_TYPES: np.int32,
+        gdf_dtype.GDF_invalid: np.int8
     }
     return np.dtype(gdf_dtypes[dtype])
 
