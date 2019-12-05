@@ -123,6 +123,7 @@ void evaluate_join(std::string condition,
 		result.destroy();
 		std::cout << "---------AFTER -- INNER JOIN" << std::endl; 
 	} else if(join_type == LEFT_JOIN) {
+		std::cout << "---------BEFORE -- LEFT JOIN" << std::endl; 
 		cudf::table result = cudf::left_join(cudf::table{left_columns},
 			cudf::table{right_columns},
 			join_cols,
@@ -131,6 +132,7 @@ void evaluate_join(std::string condition,
 			&result_idx_table,
 			&ctxt);
 		result.destroy();
+		std::cout << "---------AFTER -- LEFT JOIN" << std::endl; 
 	} else if(join_type == OUTER_JOIN) {
 		cudf::table result = cudf::full_join(cudf::table{left_columns},
 			cudf::table{right_columns},
