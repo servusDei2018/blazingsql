@@ -112,6 +112,7 @@ void evaluate_join(std::string condition,
 	cudf::table result_idx_table(result_idx_cols);
 	gdf_context ctxt{0, GDF_HASH, 0};
 	if(join_type == INNER_JOIN) {
+		std::cout << "---------BEFORE -- INNER JOIN" << std::endl; 
 		cudf::table result = cudf::inner_join(cudf::table{left_columns},
 			cudf::table{right_columns},
 			join_cols,
@@ -120,6 +121,7 @@ void evaluate_join(std::string condition,
 			&result_idx_table,
 			&ctxt);
 		result.destroy();
+		std::cout << "---------AFTER -- INNER JOIN" << std::endl; 
 	} else if(join_type == LEFT_JOIN) {
 		cudf::table result = cudf::left_join(cudf::table{left_columns},
 			cudf::table{right_columns},
